@@ -1,13 +1,19 @@
 # ApexCharts Card – Zonneplan Electricity Prices (Home Assistant)
 
-This repository is a custom fork of [apexcharts-card by @RomRider](https://github.com/RomRider/apexcharts-card) for Home Assistant, focused on visualizing
-Zonneplan electricity prices for users in the Netherlands. It adds interactive
+This repository is a custom fork of [apexcharts-card by @RomRider](https://github.com/RomRider/apexcharts-card) for Home Assistant, focused on visualizing Zonneplan electricity prices and dynamic energy tariffs for Home Assistant users in the Netherlands. It adds interactive
 features such as drag-to-pan, viewport persistence, per-bar price color thresholds, and compact
 hour-based tooltips—making it easier to identify cheap and expensive hours at a glance.
 
 > This project is an independent fork and is not affiliated with Zonneplan or the upstream ApexCharts Card project.
 
-![Zonneplan tariff chart preview](https://i.imgur.com/qiT6rbG.png)
+![Home Assistant Zonneplan electricity price chart using ApexCharts Card](https://i.imgur.com/qiT6rbG.png)
+
+## Use cases
+
+- Visualize Zonneplan electricity prices per hour in Home Assistant
+- Identify the cheapest and most expensive tariff windows
+- Explore 24–48h energy price forecasts interactively
+- Optimize appliance usage based on dynamic electricity pricing
 
 ## Status / Known limitations
 
