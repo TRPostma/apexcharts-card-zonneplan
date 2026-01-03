@@ -12,6 +12,25 @@ hour-based tooltips—making it easier to identify cheap and expensive hours at 
 
 ![Home Assistant Zonneplan electricity price chart using ApexCharts Card](https://i.imgur.com/qiT6rbG.png)
 
+## Table of Contents
+
+- [Use cases](#use-cases)
+- [Status / Known limitations](#status--known-limitations)
+- [Installation](#installation)
+- [Required integration](#required-integration)
+- [Setup](#setup)
+- [Examples](#examples)
+- [Fork-only features](#fork-only-features)
+- [Feature Documentation](#feature-documentation)
+  - [Drag-to-Pan + Viewport Persistence](#drag-to-pan--viewport-persistence)
+  - [Per-Bar Color Thresholds](#per-bar-color-thresholds)
+  - [Tooltip Template](#tooltip-template)
+  - [Y-Axis Minimum Padding](#y-axis-minimum-padding)
+  - [Per-Series Header Color](#per-series-header-color)
+- [Compatibility](#compatibility)
+- [Upstream documentation](#upstream-documentation)
+- [License](#license)
+
 ## Use cases
 
 - Visualize Zonneplan electricity prices per hour in Home Assistant
@@ -201,7 +220,9 @@ The following configuration options are added by this fork and are not available
 
 ## Feature Documentation
 
-### Drag-to-Pan + Viewport Persistence
+<details>
+<summary><h3>Drag-to-Pan + Viewport Persistence</h3></summary>
+
 Drag horizontally to scroll through forecasts. Optionally remember scroll position across page reloads.
 
 ```yaml
@@ -218,9 +239,13 @@ interaction:
 
 **Use case:** Zonneplan forecasts often span 48h; drag to explore cheapest/expensive hours.
 
+</details>
+
 ---
 
-### Per-Bar Color Thresholds
+<details>
+<summary><h3>Per-Bar Color Thresholds</h3></summary>
+
 Color individual bars based on their value, without needing multiple series.
 
 ```yaml
@@ -239,9 +264,13 @@ series:
 
 **Use case:** Quickly spot cheap/expensive tariff windows in a single column.
 
+</details>
+
 ---
 
-### Tooltip Template
+<details>
+<summary><h3>Tooltip Template</h3></summary>
+
 Compact, formatted tooltips with placeholders.
 
 ```yaml
@@ -250,8 +279,7 @@ series:
     tooltip_template: "{day} {h1}-{h2}: <b>{value:.1f}</b> {unit}"
 ```
 
-<details>
-<summary><b>Available Placeholders</b></summary>
+**Available Placeholders**
 
 | Placeholder | Description | Example Output |
 |------------|-------------|----------------|
@@ -265,36 +293,35 @@ series:
 | `{time}` | Full time (HH:MM:SS) | `14:23:45` |
 | `{x}` | Raw x-axis timestamp | `1704294225000` |
 
-</details>
+**Example Tooltip Templates**
 
-<details>
-<summary><b>Example Tooltip Templates</b></summary>
-
-**Energy tariff (hour range):**
+Energy tariff (hour range):
 ```yaml
 tooltip_template: "{day} {h1}-{h2}: <b>{value:.1f}</b> {unit}"
 # Output: "Ma 14:00-15:00: 23.5 ct/kWh"
 ```
 
-**Solar power (precise time):**
+Solar power (precise time):
 ```yaml
 tooltip_template: "Today {time}: <b>{value:.1f}</b> {unit}"
 # Output: "Today 14:23:45: 3.2 kW"
 ```
 
-**Simple value display:**
+Simple value display:
 ```yaml
 tooltip_template: "<b>{value:.2f}</b> {unit}"
 # Output: "23.46 ct/kWh"
 ```
 
-</details>
-
 **Use case:** Show tariff hour-by-hour clearly or display solar production with precise timestamps.
+
+</details>
 
 ---
 
-### Y-Axis Minimum Padding
+<details>
+<summary><h3>Y-Axis Minimum Padding</h3></summary>
+
 Add headroom below the computed minimum value.
 
 ```yaml
@@ -307,9 +334,13 @@ yaxis:
 
 **Use case:** Prevent bars from touching the bottom edge when minimum values are small.
 
+</details>
+
 ---
 
-### Per-Series Header Color
+<details>
+<summary><h3>Per-Series Header Color</h3></summary>
+
 Override the header text color for individual series.
 
 ```yaml
@@ -322,6 +353,8 @@ series:
 ```
 
 **Use case:** Highlight key series (e.g., cheapest hour in green, most expensive in red).
+
+</details>
 
 
 ## Status / Known limitations
