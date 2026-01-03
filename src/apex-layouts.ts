@@ -358,7 +358,7 @@ function getTooltipConfig(config: ChartCardConfig, hass: HomeAssistant | undefin
     return {
       shared: false,
       intersect: hasColumnType, // Only intersect for column charts
-      followCursor: false,
+      followCursor: true,
       theme: 'light',
       custom: function({ series, seriesIndex, dataPointIndex, w }: any) {
         const x = w.globals.seriesX[seriesIndex][dataPointIndex];
