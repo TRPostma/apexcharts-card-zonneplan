@@ -15,7 +15,6 @@ hour-based tooltips—making it easier to identify cheap and expensive hours at 
 ## Table of Contents
 
 - [Use cases](#use-cases)
-- [Status / Known limitations](#status--known-limitations)
 - [Installation](#installation)
 - [Required integration](#required-integration)
 - [Setup](#setup)
@@ -27,6 +26,7 @@ hour-based tooltips—making it easier to identify cheap and expensive hours at 
   - [Tooltip Template](#tooltip-template)
   - [Y-Axis Minimum Padding](#y-axis-minimum-padding)
   - [Per-Series Header Color](#per-series-header-color)
+- [Status / Known limitations](#status--known-limitations)
 - [Compatibility](#compatibility)
 - [Upstream documentation](#upstream-documentation)
 - [License](#license)
