@@ -2,16 +2,49 @@
 
 This fork extends [apexcharts-card by @RomRider](https://github.com/RomRider/apexcharts-card) with features for exploring energy tariff forecasts—especially Netherlands electricity prices via Zonneplan. The goal is to help users quickly spot cheap/expensive hours, explore forecasts by dragging, and remember their view across page reloads.
 
+> This project is an independent fork and is not affiliated with Zonneplan or the upstream ApexCharts Card project.
+
 ![Zonneplan tariff chart preview](https://i.imgur.com/qiT6rbG.png)
 
+## Status / Known limitations
+
+This is a personal fork that targets a specific Zonneplan use case. While it is working for day-to-day usage, some parts may still be rough around the edges and you may encounter edge cases.
+
+### Home Assistant editor preview quirk (one big bar)
+Sometimes the Lovelace visual editor preview renders the chart incorrectly (often as a single large bar). This is usually only an editor/preview issue.
+
+Workaround:
+1. Click **Done** to save the card.
+2. Hard refresh Home Assistant (or reload the page).
+3. If it still looks wrong, clear your browser cache for Home Assistant and refresh again.
+
+After a full reload, the chart should render correctly.
+
+## Installation
+
+### Option A — HACS (recommended)
+
+1. HACS → Frontend → ⋮ → Custom repositories  
+2. Add: `https://github.com/<you>/<repo>`  
+3. Category: **Lovelace**  
+4. Install → Restart Home Assistant  
+5. Add resource: `/hacsfiles/<repo-name>/apexcharts-card.js` (type: module)
+
+### Option B — Manual
+
+1. Copy `apexcharts-card.js` to `/config/www/` (so it becomes `/local/apexcharts-card.js`)
+2. Add Lovelace resource: `/local/apexcharts-card.js` (type: module)
+3. Restart Home Assistant (or reload resources)
+
 ## Required integration
+
 - [Zonneplan One](https://github.com/fsaris/home-assistant-zonneplan-one) – provides `sensor.zonneplan_current_electricity_tariff` with forecast data.
 
-## Integration steps
-1) Install this forked `apexcharts-card.js` (HACS custom repo or manual copy to `/config/www`).
-2) Add Lovelace resource: `/local/apexcharts-card.js` as `type: module`.
-3) Install Zonneplan One integration and ensure the tariff sensor is available.
-4) Paste one of the examples below into a Manual card and adjust entity IDs/colors.
+## Setup
+
+1) Install Zonneplan One and confirm the tariff sensor exists.  
+2) Paste one of the examples below into a Manual card and adjust entity IDs/colors.
+
 
 ## Examples
 
@@ -149,6 +182,22 @@ yaxis:
 
 ---
 
+## Fork-only features
+
+The following configuration options are added by this fork and are not available in upstream apexcharts-card:
+
+- `interaction.drag_pan`
+- `interaction.persist_view`
+- `interaction.persist_view_storage`
+- `interaction.reset_on_doubleclick`
+- `interaction.view_id`
+- `interaction.overscroll.*`
+- `series.color_thresholds`
+- `series.tooltip_template`
+- `yaxis.min_padding`
+- `series.show.header_color`
+
+
 ## Feature Documentation
 
 ### Drag-to-Pan + Viewport Persistence
@@ -231,11 +280,18 @@ Override the header text color for individual series.
 series:
   - entity: sensor.zonneplan_current_electricity_tariff
     show:
+      in_chart: false
       in_header: true
       header_color: "#00a964"  # force green, even if colorize_states is on
 ```
 
 **Use case:** Highlight key series (e.g., cheapest hour in green, most expensive in red).
+
+## Compatibility
+
+This fork is based on upstream apexcharts-card and will likely not track upstream changes immediately. If you update Home Assistant or ApexCharts Card-related dependencies and something breaks, please open an issue on this repository (not upstream) and include your YAML and browser console logs.
+
+Fork base: upstream apexcharts-card @ 6d3f1e9
 
 ## Upstream documentation
 For all standard options and comprehensive usage, see the original project: https://github.com/RomRider/apexcharts-card
