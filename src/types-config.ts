@@ -124,6 +124,7 @@ export interface ChartCardAllSeriesExternalConfig {
     color: string;
   }>;
   tooltip_template?: string;
+  tooltip_hide_x_axis?: boolean;
   yaxis_id?: string;
   header_actions?: ActionsConfig;
 }

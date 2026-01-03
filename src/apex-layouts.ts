@@ -39,6 +39,11 @@ function formatTooltipTemplate(
   const nextHour = new Date(x + 3600000);
   const h2 = nextHour.getHours().toString().padStart(2, '0') + ':00';
   
+  // Time in HH:MM:SS format
+  const time = date.getHours().toString().padStart(2, '0') + ':' +
+               date.getMinutes().toString().padStart(2, '0') + ':' +
+               date.getSeconds().toString().padStart(2, '0');
+  
   const unit = serieConfig?.unit || computeUom(0, [serieConfig], undefined, hass?.states[serieConfig?.entity]) || '';
   
   // Parse precision specifier like {value:.1f}
@@ -55,6 +60,7 @@ function formatTooltipTemplate(
     .replace(/\{day\}/g, day)
     .replace(/\{h1\}/g, h1)
     .replace(/\{h2\}/g, h2)
+    .replace(/\{time\}/g, time)
     .replace(/\{unit\}/g, unit)
     .replace(/\{x\}/g, x.toString());
   
@@ -345,9 +351,13 @@ function getTooltipConfig(config: ChartCardConfig, hass: HomeAssistant | undefin
   const hasCustomTemplate = config.series_in_graph.some(serie => serie.tooltip_template);
   
   if (hasCustomTemplate) {
+    // For line/area charts, don't require exact intersection - tooltip shows when near the line
+    // For column charts, require intersection with the bar itself
+    const hasColumnType = config.series_in_graph.some(serie => serie.type === 'column');
+    
     return {
       shared: false,
-      intersect: true,
+      intersect: hasColumnType, // Only intersect for column charts
       followCursor: false,
       theme: 'light',
       custom: function({ series, seriesIndex, dataPointIndex, w }: any) {

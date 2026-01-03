@@ -122,6 +122,7 @@ export const ChartCardAllSeriesExternalConfig = t.iface([], {
     "color": "string",
   }))),
   "tooltip_template": t.opt("string"),
+  "tooltip_hide_x_axis": t.opt("boolean"),
   "yaxis_id": t.opt("string"),
   "header_actions": t.opt("ActionsConfig"),
 });

@@ -245,17 +245,52 @@ series:
 Compact, formatted tooltips with placeholders.
 
 ```yaml
-tooltip_template: "{day} {h1}-{h2}: <b>{value:.1f}</b> {unit}"
+series:
+  - entity: sensor.zonneplan_current_electricity_tariff
+    tooltip_template: "{day} {h1}-{h2}: <b>{value:.1f}</b> {unit}"
 ```
 
-**Placeholders:**
-- `{value}`, `{value:.1f}`, `{value:.2f}` – numeric value with precision
-- `{unit}` – series unit (e.g., "ct/kWh")
-- `{day}` – date label (e.g., "2026-01-03")
-- `{h1}`, `{h2}` – hour range (e.g., "14-15")
-- `{x}` – raw x-axis value
+<details>
+<summary><b>Available Placeholders</b></summary>
 
-**Use case:** Show tariff hour-by-hour clearly: "2026-01-03 14-15: **23.5** ct/kWh".
+| Placeholder | Description | Example Output |
+|------------|-------------|----------------|
+| `{value}` | Raw numeric value | `23.456` |
+| `{value:.1f}` | Value with 1 decimal | `23.5` |
+| `{value:.2f}` | Value with 2 decimals | `23.46` |
+| `{unit}` | Series unit | `ct/kWh`, `W`, `kWh` |
+| `{day}` | Weekday (short) | `Ma`, `Di`, `Wo` |
+| `{h1}` | Hour start | `14:00` |
+| `{h2}` | Hour end | `15:00` |
+| `{time}` | Full time (HH:MM:SS) | `14:23:45` |
+| `{x}` | Raw x-axis timestamp | `1704294225000` |
+
+</details>
+
+<details>
+<summary><b>Example Tooltip Templates</b></summary>
+
+**Energy tariff (hour range):**
+```yaml
+tooltip_template: "{day} {h1}-{h2}: <b>{value:.1f}</b> {unit}"
+# Output: "Ma 14:00-15:00: 23.5 ct/kWh"
+```
+
+**Solar power (precise time):**
+```yaml
+tooltip_template: "Today {time}: <b>{value:.1f}</b> {unit}"
+# Output: "Today 14:23:45: 3.2 kW"
+```
+
+**Simple value display:**
+```yaml
+tooltip_template: "<b>{value:.2f}</b> {unit}"
+# Output: "23.46 ct/kWh"
+```
+
+</details>
+
+**Use case:** Show tariff hour-by-hour clearly or display solar production with precise timestamps.
 
 ---
 
