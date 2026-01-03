@@ -1,6 +1,9 @@
-# ApexCharts Card – Zonneplan Fork
+# ApexCharts Card – Zonneplan Electricity Prices (Home Assistant)
 
-This fork extends [apexcharts-card by @RomRider](https://github.com/RomRider/apexcharts-card) with features for exploring energy tariff forecasts—especially Netherlands electricity prices via Zonneplan. The goal is to help users quickly spot cheap/expensive hours, explore forecasts by dragging, and remember their view across page reloads.
+This repository is a custom fork of [apexcharts-card by @RomRider](https://github.com/RomRider/apexcharts-card) for Home Assistant, focused on visualizing
+Zonneplan electricity prices for users in the Netherlands. It adds interactive
+features such as drag-to-pan, viewport persistence, per-bar price color thresholds, and compact
+hour-based tooltips—making it easier to identify cheap and expensive hours at a glance.
 
 > This project is an independent fork and is not affiliated with Zonneplan or the upstream ApexCharts Card project.
 
