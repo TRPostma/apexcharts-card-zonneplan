@@ -1,5 +1,6 @@
 {
-  "name": "apexcharts-card",
-  "homeassistant": "2023.7.0",
-  "render_readme": true
+  "name": "ApexCharts Card – Zonneplan Fork",
+  "content_in_root": false,
+  "render_readme": true,
+  "domains": ["lovelace"]
 }

@@ -34,6 +34,18 @@ export interface ChartCardExternalConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   apex_config?: any;
   header?: ChartCardHeaderExternalConfig;
+  interaction?: {
+    drag_pan?: boolean;
+    persist_view?: boolean;
+    persist_view_storage?: 'memory' | 'localStorage';
+    reset_on_doubleclick?: boolean;
+    view_id?: string;
+    overscroll?: {
+      mode?: 'none' | 'soft' | 'infinite';
+      factor?: number;
+      clamp_to_data?: boolean;
+    };
+  };
   // Support to define style (card-mod/card-mod-v3.0 or picture-entity)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   style?: any;
@@ -104,6 +116,14 @@ export interface ChartCardAllSeriesExternalConfig {
   };
   transform?: string;
   color_threshold?: ChartCardColorThreshold[];
+  color_thresholds?: Array<{
+    lt?: number;
+    lte?: number;
+    gt?: number;
+    gte?: number;
+    color: string;
+  }>;
+  tooltip_template?: string;
   yaxis_id?: string;
   header_actions?: ActionsConfig;
 }
@@ -120,6 +140,7 @@ export interface ChartCardSeriesShowConfigExt {
   in_legend?: boolean;
   legend_value?: boolean;
   in_header?: boolean | 'raw' | 'before_now' | 'after_now';
+  header_color?: string;
   name_in_header?: boolean;
   null_in_header?: boolean;
   zero_in_header?: boolean;
@@ -165,6 +186,7 @@ export interface ChartCardYAxisExternal {
   opposite?: boolean;
   min?: 'auto' | number | string;
   max?: 'auto' | number | string;
+  min_padding?: number;
   align_to?: number;
   decimals?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

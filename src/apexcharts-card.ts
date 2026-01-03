@@ -155,6 +155,10 @@ class ChartsCard extends LitElement {
 
   @property({ attribute: false }) private _headerState: (number | null)[] = [];
 
+  @property({ attribute: false }) private _headerStateExtra: string[] = [];
+
+  @property({ attribute: false }) private _maxPrice: number | null = null;
+
   private _dataLoaded = false;
 
   private _seriesOffset: number[] = [];
@@ -174,6 +178,23 @@ class ChartsCard extends LitElement {
   @property({ attribute: false }) _lastUpdated: Date = new Date();
 
   @property({ type: Boolean }) private _warning = false;
+
+  // Drag-pan and viewport persistence state
+  private _dragState: { active: boolean; startX: number; startMin: number; startMax: number; plotWidthPx: number } | null = null;
+
+  private _viewState: { min: number; max: number } | null = null;
+
+  private _defaultView: { min: number; max: number } | null = null;
+
+  private _restoringView = false;
+
+  private _restoreQueued = false;
+
+  private _storageKey = '';
+
+  private _pointerListenersAttached = false;
+
+  private _rafId: number | null = null;
 
   public connectedCallback() {
     super.connectedCallback();
@@ -198,6 +219,14 @@ class ChartsCard extends LitElement {
     if (this._intervalTimeout) {
       clearInterval(this._intervalTimeout);
     }
+    // Clean up drag-pan RAF
+    if (this._rafId !== null) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = null;
+    }
+    // Clean up state
+    this._dragState = null;
+    this._restoreQueued = false;
     this._updating = false;
     super.disconnectedCallback();
   }
@@ -393,8 +422,14 @@ class ChartsCard extends LitElement {
           serie.fill_raw = serie.fill_raw || DEFAULT_FILL_RAW;
           serie.extend_to = serie.extend_to !== undefined ? serie.extend_to : 'end';
           serie.type = this._config?.chart_type ? undefined : serie.type || DEFAULT_SERIE_TYPE;
+          // Skip auto-bucketing if data_generator provides explicit data
           if (!serie.group_by) {
-            serie.group_by = { duration: DEFAULT_DURATION, func: DEFAULT_FUNC, fill: DEFAULT_GROUP_BY_FILL };
+            if (serie.data_generator) {
+              // data_generator provides pre-bucketed data, use 'raw' to prevent re-aggregation
+              serie.group_by = { duration: '1h', func: 'raw', fill: DEFAULT_GROUP_BY_FILL };
+            } else {
+              serie.group_by = { duration: DEFAULT_DURATION, func: DEFAULT_FUNC, fill: DEFAULT_GROUP_BY_FILL };
+            }
           } else {
             serie.group_by.duration = serie.group_by.duration || DEFAULT_DURATION;
             serie.group_by.func = serie.group_by.func || DEFAULT_FUNC;
@@ -560,6 +595,431 @@ class ChartsCard extends LitElement {
       return yAxisDup;
     });
     return yaxisConfig;
+  }
+
+  /**
+   * Compute stable storage key for viewport persistence
+   */
+  private _computeStorageKey(): string {
+    if (this._config?.interaction?.view_id) {
+      return `apex_view::${this._config.interaction.view_id}`;
+    }
+    // Hash based on sorted entity IDs + graph_span + title
+    const entityIds = this._config?.series.map((s) => s.entity).sort().join('|') || '';
+    const graphSpan = this._config?.graph_span || '';
+    const title = this._config?.header?.title || '';
+    const key = `${entityIds}|${graphSpan}|${title}`;
+    // Simple hash
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+      const char = key.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return `apex_view::${Math.abs(hash).toString(36)}`;
+  }
+
+  /**
+   * Extract data extent (min and max timestamps) from series
+   */
+  private _getDataExtent(): { min: number; max: number } | null {
+    if (!this._graphs || this._graphs.length === 0) return null;
+
+    let minTimestamp = Infinity;
+    let maxTimestamp = -Infinity;
+    let hasData = false;
+
+    this._graphs.forEach((graph) => {
+      if (!graph) return;
+      const data = graph.history;
+      if (data && data.length > 0) {
+        hasData = true;
+        data.forEach((point) => {
+          const ts = point[0];
+          if (ts < minTimestamp) minTimestamp = ts;
+          if (ts > maxTimestamp) maxTimestamp = ts;
+        });
+      }
+    });
+
+    return hasData ? { min: minTimestamp, max: maxTimestamp } : null;
+  }
+
+  /**
+   * Clamp a viewport range according to overscroll settings
+   */
+  private _clampViewport(min: number, max: number): { min: number; max: number } | null {
+    const extent = this._getDataExtent();
+    if (!extent) return null;
+
+    const range = max - min;
+    const minRange = (extent.max - extent.min) * 0.01; // At least 1% of data range
+
+    if (range < minRange) {
+      // Range too small, fall back to default
+      return null;
+    }
+
+    // Get overscroll settings
+    const overscrollMode = this._config?.interaction?.overscroll?.mode || 'soft';
+    const overscrollFactor = this._config?.interaction?.overscroll?.factor || 1.5;
+    
+    if (overscrollMode === 'infinite') {
+      // No clamping at all - allow infinite panning
+      return { min, max };
+    }
+    
+    if (overscrollMode === 'none') {
+      // Strict clamping to data extent (original behavior)
+      let clampedMin = Math.max(min, extent.min);
+      let clampedMax = Math.min(max, extent.max);
+
+      // If clamping inverted the range, adjust
+      if (clampedMax <= clampedMin) {
+        clampedMax = clampedMin + range;
+      }
+
+      // Ensure we don't exceed bounds
+      if (clampedMax > extent.max) {
+        const overflow = clampedMax - extent.max;
+        clampedMax = extent.max;
+        clampedMin = Math.max(clampedMin - overflow, extent.min);
+      }
+      if (clampedMin < extent.min) {
+        const underflow = extent.min - clampedMin;
+        clampedMin = extent.min;
+        clampedMax = Math.min(clampedMax + underflow, extent.max);
+      }
+
+      return { min: clampedMin, max: clampedMax };
+    }
+    
+    // mode === 'soft': allow overscroll by factor * windowRange
+    const windowRange = range;
+    const minLimit = extent.min - overscrollFactor * windowRange;
+    const maxLimit = extent.max + overscrollFactor * windowRange;
+    
+    const clampedMin = Math.max(min, minLimit);
+    const clampedMax = Math.min(max, maxLimit);
+    
+    // Ensure min < max
+    if (clampedMax <= clampedMin) {
+      return null;
+    }
+    
+    return { min: clampedMin, max: clampedMax };
+  }
+
+  /**
+   * Apply color thresholds to a single data point value
+   */
+  private _getThresholdColor(value: number | null, thresholds: any[]): string | undefined {
+    if (value === null || value === undefined || !thresholds || thresholds.length === 0) {
+      return undefined;
+    }
+    
+    // Apply first matching threshold
+    for (const threshold of thresholds) {
+      if (threshold.lt !== undefined) {
+        if (value < threshold.lt) {
+          return threshold.color;
+        }
+      } else if (threshold.lte !== undefined) {
+        if (value <= threshold.lte) {
+          return threshold.color;
+        }
+      } else if (threshold.gt !== undefined) {
+        if (value > threshold.gt) {
+          return threshold.color;
+        }
+      } else if (threshold.gte !== undefined) {
+        if (value >= threshold.gte) {
+          return threshold.color;
+        }
+      } else {
+        // Fallback threshold without comparator
+        return threshold.color;
+      }
+    }
+    
+    return undefined;
+  }
+
+  /**
+   * Transform series data to object form with fillColor for column charts
+   */
+  private _applyColorThresholds(data: EntityCachePoints, serieConfig: any): any[] {
+    if (serieConfig.type !== 'column' || !serieConfig.color_thresholds) {
+      // Return as-is for non-column series or when no thresholds defined
+      return data.map(point => [point[0], point[1]]);
+    }
+    
+    // Transform to object form with fillColor
+    return data.map(point => {
+      const [x, y] = point;
+      const fillColor = this._getThresholdColor(y, serieConfig.color_thresholds);
+      
+      if (fillColor) {
+        return { x, y, fillColor };
+      } else {
+        return { x, y };
+      }
+    });
+  }
+
+  /**
+   * Load persisted viewport from storage
+   */
+  private async _loadViewState(): Promise<void> {
+    if (!this._config?.interaction?.persist_view) return;
+
+    const storageType = this._config.interaction.persist_view_storage || 'memory';
+    if (storageType === 'localStorage') {
+      try {
+        const stored = localStorage.getItem(this._storageKey);
+        if (stored) {
+          this._viewState = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.warn('Failed to load view state from localStorage:', e);
+      }
+    }
+    // For memory storage, _viewState is already null initially
+  }
+
+  /**
+   * Save viewport to storage
+   */
+  private _saveViewState(): void {
+    if (!this._config?.interaction?.persist_view || !this._viewState) return;
+
+    const storageType = this._config.interaction.persist_view_storage || 'memory';
+    if (storageType === 'localStorage') {
+      try {
+        localStorage.setItem(this._storageKey, JSON.stringify(this._viewState));
+      } catch (e) {
+        console.warn('Failed to save view state to localStorage:', e);
+      }
+    }
+  }
+
+  /**
+   * Clear persisted viewport state (e.g., on double-click reset)
+   */
+  private _clearViewState(): void {
+    this._viewState = null;
+    const storageType = this._config?.interaction?.persist_view_storage || 'memory';
+    if (storageType === 'localStorage') {
+      try {
+        localStorage.removeItem(this._storageKey);
+      } catch (e) {
+        console.warn('Failed to clear view state from localStorage:', e);
+      }
+    }
+  }
+
+  /**
+   * Restore the current viewport (either persisted or default)
+   */
+  private _restoreViewport(): void {
+    if (!this._apexChart || this._restoringView) return;
+
+    this._restoringView = true;
+    try {
+      const viewToApply = this._viewState || this._defaultView;
+      if (viewToApply) {
+        this._apexChart.updateOptions(
+          {
+            xaxis: {
+              min: viewToApply.min,
+              max: viewToApply.max,
+            },
+          },
+          false,
+          false,
+          false,
+        );
+      }
+    } finally {
+      this._restoringView = false;
+    }
+  }
+
+  /**
+   * Queue a viewport restore (coalesced to next animation frame)
+   */
+  private _queueViewRestore(): void {
+    if (this._restoreQueued) return;
+    this._restoreQueued = true;
+
+    if (this._rafId !== null) {
+      cancelAnimationFrame(this._rafId);
+    }
+
+    this._rafId = window.requestAnimationFrame(() => {
+      this._rafId = null;
+      this._restoreQueued = false;
+      this._restoreViewport();
+    });
+  }
+
+  /**
+   * Attach pointer event listeners for drag-pan
+   */
+  private _attachPointerListeners(): void {
+    if (this._pointerListenersAttached || !this._apexChart) return;
+
+    const container = this.shadowRoot?.querySelector('#graph') as HTMLElement;
+    if (!container) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!this._config?.interaction?.drag_pan || e.button !== 0) return; // Left button only
+
+      const container = this.shadowRoot?.querySelector('#graph') as HTMLElement;
+      if (!container) return;
+
+      // Get plot dimensions
+      const rect = container.getBoundingClientRect();
+      const plotWidthPx = rect.width;
+
+      // Read current xaxis range
+      let startMin = (this._apexChart as any).axes?.w?.globals?.minX;
+      let startMax = (this._apexChart as any).axes?.w?.globals?.maxX;
+
+      // Fallback: try to extract from current series data
+      if (startMin === undefined || startMax === undefined) {
+        const extent = this._getDataExtent();
+        if (extent) {
+          startMin = extent.min;
+          startMax = extent.max;
+        } else {
+          return; // Can't determine range
+        }
+      }
+
+      this._dragState = {
+        active: true,
+        startX: e.clientX,
+        startMin,
+        startMax,
+        plotWidthPx,
+      };
+
+      (e.target as any).setPointerCapture(e.pointerId);
+      container.style.touchAction = 'none';
+      e.preventDefault();
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!this._dragState?.active) return;
+
+      if (this._rafId !== null) {
+        cancelAnimationFrame(this._rafId);
+      }
+
+      this._rafId = window.requestAnimationFrame(() => {
+        this._rafId = null;
+        if (!this._dragState?.active) return;
+
+        const deltaX = e.clientX - this._dragState.startX;
+        const timePerPixel = (this._dragState.startMax - this._dragState.startMin) / this._dragState.plotWidthPx;
+        const deltaTime = -deltaX * timePerPixel; // Negative because dragging right = panning left (earlier time)
+
+        let newMin = this._dragState.startMin + deltaTime;
+        let newMax = this._dragState.startMax + deltaTime;
+
+        // Clamp to data extent
+        const clamped = this._clampViewport(newMin, newMax);
+        if (!clamped) {
+          // Clamping failed, stop drag
+          this._dragState.active = false;
+          return;
+        }
+
+        newMin = clamped.min;
+        newMax = clamped.max;
+
+        this._apexChart?.updateOptions(
+          {
+            xaxis: {
+              min: newMin,
+              max: newMax,
+            },
+          },
+          false,
+          false,
+          false,
+        );
+      });
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!this._dragState?.active) return;
+
+      (e.target as any).releasePointerCapture(e.pointerId);
+
+      const container = this.shadowRoot?.querySelector('#graph') as HTMLElement;
+      if (container) {
+        container.style.touchAction = '';
+      }
+
+      // Save final state
+      const finalMin = (this._apexChart as any).axes?.w?.globals?.minX;
+      const finalMax = (this._apexChart as any).axes?.w?.globals?.maxX;
+
+      if (finalMin !== undefined && finalMax !== undefined) {
+        this._viewState = { min: finalMin, max: finalMax };
+        this._saveViewState();
+      }
+
+      this._dragState.active = false;
+    };
+
+    const onPointerCancel = (e: PointerEvent) => {
+      if (!this._dragState?.active) return;
+      (e.target as any).releasePointerCapture(e.pointerId);
+      const container = this.shadowRoot?.querySelector('#graph') as HTMLElement;
+      if (container) {
+        container.style.touchAction = '';
+      }
+      this._dragState.active = false;
+    };
+
+    container.addEventListener('pointerdown', onPointerDown);
+    container.addEventListener('pointermove', onPointerMove);
+    container.addEventListener('pointerup', onPointerUp);
+    container.addEventListener('pointercancel', onPointerCancel);
+
+    this._pointerListenersAttached = true;
+  }
+
+  /**
+   * Attach double-click listener for reset
+   */
+  private _attachDoubleClickListener(): void {
+    if (!this._config?.interaction?.reset_on_doubleclick) return;
+
+    const container = this.shadowRoot?.querySelector('#graph') as HTMLElement;
+    if (!container) return;
+
+    const onDoubleClick = () => {
+      this._clearViewState();
+      if (this._defaultView && this._apexChart) {
+        this._apexChart.updateOptions(
+          {
+            xaxis: {
+              min: this._defaultView.min,
+              max: this._defaultView.max,
+            },
+          },
+          false,
+          false,
+          false,
+        );
+      }
+    };
+
+    container.addEventListener('dblclick', onDoubleClick);
   }
 
   static get styles(): CSSResultGroup {
@@ -754,7 +1214,7 @@ class ChartsCard extends LitElement {
                     : ''}
                 </div>
                 ${serie.show.name_in_header
-                  ? html`<div id="state__name">${computeName(index, this._config?.series, this._entities)}</div>`
+                  ? html`<div id="state__name">${this._headerStateExtra?.[index] || computeName(index, this._config?.series, this._entities)}</div>`
                   : ''}
                 <mwc-ripple unbounded id="ripple-${index}"></mwc-ripple>
               </div>
@@ -808,6 +1268,27 @@ class ChartsCard extends LitElement {
         promises.push(this._apexBrush.render());
       }
       await Promise.all(promises);
+
+      // Initialize viewport persistence
+      this._storageKey = this._computeStorageKey();
+      
+      // Capture the initial default view
+      const currentMin = (this._apexChart as any).axes?.w?.globals?.minX;
+      const currentMax = (this._apexChart as any).axes?.w?.globals?.maxX;
+      if (currentMin !== undefined && currentMax !== undefined) {
+        this._defaultView = { min: currentMin, max: currentMax };
+      }
+
+      // Load persisted viewport and queue restore
+      await this._loadViewState();
+      this._queueViewRestore();
+
+      // Attach drag-pan event listeners
+      this._attachPointerListeners();
+
+      // Attach double-click reset listener
+      this._attachDoubleClickListener();
+
       this._firstDataLoad();
     }
   }
@@ -849,6 +1330,15 @@ class ChartsCard extends LitElement {
               // not raw
               this._headerState[index] = graph.lastState;
             }
+            // Extract day/hour if this is a min/max series from data_generator
+            const serieName = this._config?.series[index].name?.toLowerCase() || '';
+            if (serieName.includes('goedkoopste')) {
+              this._headerStateExtra[index] = this._extractDayHourFromForecast(index, 'min');
+            } else if (serieName.includes('duurste')) {
+              this._headerStateExtra[index] = this._extractDayHourFromForecast(index, 'max');
+            } else {
+              this._headerStateExtra[index] = '';
+            }
           }
           if (!this._config?.series[index].show.in_chart && !this._config?.series[index].show.in_brush) {
             return;
@@ -883,7 +1373,9 @@ class ChartsCard extends LitElement {
               data.push([now.getTime() - this._serverTimeOffset, lastPoint[1]]);
             }
           }
-          const result = this._config?.series[index].invert ? { data: this._invertData(data) } : { data };
+          // Apply color thresholds for column charts before inverting
+          const processedData = this._applyColorThresholds(data, this._config?.series[index]);
+          const result = this._config?.series[index].invert ? { data: this._invertData(processedData as any) } : { data: processedData };
           if (this._config?.series[index].show.in_chart) graphData.series.push(result);
           if (this._config?.series[index].show.in_brush) brushData.series.push(result);
           return;
@@ -986,6 +1478,7 @@ class ChartsCard extends LitElement {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const currentMax = (this._apexChart as any).axes?.w?.globals?.maxX;
       this._headerState = [...this._headerState];
+      
       const chartUpdates: Promise<void>[] = [];
       chartUpdates.push(
         this._apexChart?.updateOptions(
@@ -1029,6 +1522,11 @@ class ChartsCard extends LitElement {
         chartUpdates.push(this._apexBrush?.updateOptions(brushData, false, false));
       }
       await Promise.all(chartUpdates);
+
+      // Restore viewport if persist_view is enabled
+      if (this._config.interaction?.persist_view) {
+        this._queueViewRestore();
+      }
     } catch (err) {
       log(err);
     }
@@ -1242,6 +1740,17 @@ class ChartsCard extends LitElement {
             max = elt.max[1];
           }
         });
+
+        // Apply optional padding below the computed minimum to avoid touching the baseline
+        if (
+          typeof yaxis.min_padding === 'number' &&
+          yaxis.min_padding > 0 &&
+          min !== null &&
+          yaxis.min_type !== minmax_type.FIXED
+        ) {
+          min = (min as number) - yaxis.min_padding;
+        }
+
         if (yaxis.align_to !== undefined) {
           if (min !== null && yaxis.min_type !== minmax_type.FIXED) {
             if (min % yaxis.align_to !== 0) {
@@ -1417,6 +1926,18 @@ class ChartsCard extends LitElement {
 
   private _computeHeaderStateColor(serie: ChartCardSeriesConfig, value: number | null): string {
     let color = '';
+    
+    // Explicit per-series header color wins if provided
+    if (serie.show?.header_color) {
+      return `color: ${serie.show.header_color};`;
+    }
+
+    // Check if this is a max series (green for lowest removed, keep orange for highest)
+    const serieName = serie.name?.toLowerCase() || '';
+    if (serieName.includes('duurste') && value === this._maxPrice) {
+      return 'color: #ed5e18;'; // Orange for highest price
+    }
+    
     if (this._config?.header?.colorize_states) {
       if (
         this._config.experimental?.color_threshold &&
@@ -1458,6 +1979,67 @@ class ChartsCard extends LitElement {
   private _computeLastState(value: number | null, index: number): string | number | null {
     if (value === null) return value;
     return myFormatNumber(value, this._hass?.locale, this._config?.series[index].float_precision);
+  }
+
+  private _extractDayHourFromForecast(index: number, minOrMax: 'min' | 'max'): string {
+    const serie = this._config?.series[index];
+    if (!serie) return '';
+    
+    // Get the entity to read forecast data
+    const entityId = serie.entity;
+    if (!entityId || !this._hass?.states[entityId]) return '';
+    
+    const entity = this._hass.states[entityId];
+    const forecast = entity.attributes?.forecast;
+    if (!forecast || !Array.isArray(forecast) || forecast.length === 0) return '';
+    
+    const now = Date.now();
+    const days = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
+    
+    // Filter to only future forecast items
+    const futureItems = forecast.filter((item: any) => {
+      const itemTime = new Date(item.datetime).getTime();
+      return itemTime >= now;
+    });
+    
+    if (futureItems.length === 0) return '';
+    
+    // Find min/max from future forecast only
+    let targetItem: any = futureItems[0];
+    if (minOrMax === 'min') {
+      futureItems.forEach((item: any) => {
+        const itemPrice = item.electricity_price || 0;
+        const targetPrice = targetItem.electricity_price || 0;
+        if (itemPrice < targetPrice) {
+          targetItem = item;
+        }
+      });
+      // Store minimum price (convert to cents/kWh like data_generator does)
+      if (targetItem?.electricity_price) {
+        const minPrice = (targetItem.electricity_price / 10000000) * 100;
+        this._headerState[index] = minPrice; // Update the displayed value to match
+      }
+    } else {
+      futureItems.forEach((item: any) => {
+        const itemPrice = item.electricity_price || 0;
+        const targetPrice = targetItem.electricity_price || 0;
+        if (itemPrice > targetPrice) {
+          targetItem = item;
+        }
+      });
+      // Store maximum price (convert to cents/kWh like data_generator does)
+      if (targetItem?.electricity_price) {
+        const maxPrice = (targetItem.electricity_price / 10000000) * 100;
+        this._maxPrice = maxPrice;
+        this._headerState[index] = maxPrice; // Update the displayed value to match
+      }
+    }
+    
+    if (!targetItem?.datetime) return '';
+    const date = new Date(targetItem.datetime);
+    const day = days[date.getDay()];
+    const hour = String(date.getHours()).padStart(2, '0');
+    return `${day} ${hour}:00`;
   }
 
   /*

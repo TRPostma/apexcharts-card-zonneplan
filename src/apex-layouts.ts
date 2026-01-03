@@ -16,6 +16,51 @@ import { layoutMinimal } from './layouts/minimal';
 import { getLocales, getDefaultLocale } from './locales';
 import GraphEntry from './graphEntry';
 
+const DEFAULT_WEEKDAY_SHORT_NL = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
+
+/**
+ * Format tooltip template with variable replacements
+ */
+function formatTooltipTemplate(
+  template: string,
+  x: number,
+  y: number | null,
+  serieConfig: any,
+  hass: HomeAssistant | undefined,
+): string {
+  if (y === null || y === undefined) return '';
+  
+  const date = new Date(x);
+  const dayIndex = date.getDay();
+  const weekdays = DEFAULT_WEEKDAY_SHORT_NL; // Could be locale-dependent later
+  const day = weekdays[dayIndex];
+  
+  const h1 = date.getHours().toString().padStart(2, '0') + ':00';
+  const nextHour = new Date(x + 3600000);
+  const h2 = nextHour.getHours().toString().padStart(2, '0') + ':00';
+  
+  const unit = serieConfig?.unit || computeUom(0, [serieConfig], undefined, hass?.states[serieConfig?.entity]) || '';
+  
+  // Parse precision specifier like {value:.1f}
+  let formatted = template;
+  const valueRegex = /\{value(?::\.?(\d+)f)?\}/g;
+  formatted = formatted.replace(valueRegex, (_match, precision) => {
+    if (precision !== undefined) {
+      return y.toFixed(parseInt(precision, 10));
+    }
+    return y.toString();
+  });
+  
+  formatted = formatted
+    .replace(/\{day\}/g, day)
+    .replace(/\{h1\}/g, h1)
+    .replace(/\{h2\}/g, h2)
+    .replace(/\{unit\}/g, unit)
+    .replace(/\{x\}/g, x.toString());
+  
+  return formatted;
+}
+
 export function getLayoutConfig(
   config: ChartCardConfig,
   hass: HomeAssistant | undefined = undefined,
@@ -54,14 +99,7 @@ export function getLayoutConfig(
     labels: getLabels(config, hass),
     xaxis: getXAxis(config, hass),
     yaxis: getYAxis(config),
-    tooltip: {
-      x: {
-        formatter: getXTooltipFormatter(config, hass),
-      },
-      y: {
-        formatter: getYTooltipFormatter(config, hass),
-      },
-    },
+    tooltip: getTooltipConfig(config, hass),
     dataLabels: {
       enabled: getDataLabelsEnabled(config),
       enabledOnSeries: getDataLabels_enabledOnSeries(config),
@@ -229,11 +267,21 @@ function getXAxis(config: ChartCardConfig, hass: HomeAssistant | undefined) {
 }
 
 function getYAxis(config: ChartCardConfig) {
-  return Array.isArray(config.apex_config?.yaxis) || config.yaxis
-    ? undefined
-    : {
-        decimalsInFloat: DEFAULT_FLOAT_PRECISION,
-      };
+  if (Array.isArray(config.apex_config?.yaxis) || config.yaxis) {
+    // If yaxis is defined, return it as-is
+    // (decimal formatting is handled in _generateYAxisConfig)
+    const yaxisConfig = Array.isArray(config.apex_config?.yaxis) 
+      ? config.apex_config?.yaxis 
+      : config.yaxis;
+    
+    if (yaxisConfig && Array.isArray(yaxisConfig)) {
+      return yaxisConfig;
+    }
+    return undefined;
+  }
+  return {
+    decimalsInFloat: DEFAULT_FLOAT_PRECISION,
+  };
 }
 
 function getDateTimeFormatter(hours12: boolean | undefined): unknown {
@@ -290,6 +338,47 @@ function getXTooltipFormatter(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any).format(val);
       };
+}
+
+function getTooltipConfig(config: ChartCardConfig, hass: HomeAssistant | undefined) {
+  // Check if any series has tooltip_template
+  const hasCustomTemplate = config.series_in_graph.some(serie => serie.tooltip_template);
+  
+  if (hasCustomTemplate) {
+    return {
+      shared: false,
+      intersect: true,
+      custom: function({ series, seriesIndex, dataPointIndex, w }: any) {
+        const x = w.globals.seriesX[seriesIndex][dataPointIndex];
+        const y = series[seriesIndex][dataPointIndex];
+        
+        const serieConfig = config.series_in_graph[seriesIndex];
+        const template = serieConfig?.tooltip_template;
+        
+        if (template) {
+          const content = formatTooltipTemplate(template, x, y, serieConfig, hass);
+          if (!content) return '';
+          return `<div class="apexcharts-tooltip-custom" style="padding: 8px 12px; background: var(--card-background-color, #fff); border: 1px solid var(--divider-color, #e0e0e0); border-radius: 4px; font-size: 13px; color: var(--primary-text-color, #000); white-space: nowrap;">${content}</div>`;
+        }
+        
+        // Fallback to default
+        return `<div class="apexcharts-tooltip-title">${new Date(x).toLocaleString()}</div>
+                <div class="apexcharts-tooltip-series-group">
+                  <span class="apexcharts-tooltip-text-y-value">${y}</span>
+                </div>`;
+      },
+    };
+  }
+  
+  // Default tooltip configuration
+  return {
+    x: {
+      formatter: getXTooltipFormatter(config, hass),
+    },
+    y: {
+      formatter: getYTooltipFormatter(config, hass),
+    },
+  };
 }
 
 function getYTooltipFormatter(config: ChartCardConfig, hass: HomeAssistant | undefined) {
