@@ -348,6 +348,8 @@ function getTooltipConfig(config: ChartCardConfig, hass: HomeAssistant | undefin
     return {
       shared: false,
       intersect: true,
+      followCursor: false,
+      theme: 'light',
       custom: function({ series, seriesIndex, dataPointIndex, w }: any) {
         const x = w.globals.seriesX[seriesIndex][dataPointIndex];
         const y = series[seriesIndex][dataPointIndex];
@@ -372,6 +374,8 @@ function getTooltipConfig(config: ChartCardConfig, hass: HomeAssistant | undefin
   
   // Default tooltip configuration
   return {
+    followCursor: false,
+    theme: 'light',
     x: {
       formatter: getXTooltipFormatter(config, hass),
     },

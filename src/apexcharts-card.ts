@@ -188,6 +188,9 @@ class ChartsCard extends LitElement {
 
   private _restoringView = false;
 
+  // Track last applied stacked config to avoid unnecessary re-renders (fixes vertical stacking bug)
+  private _lastAppliedStackedConfig?: boolean;
+
   private _restoreQueued = false;
 
   private _storageKey = '';
@@ -1478,6 +1481,15 @@ class ChartsCard extends LitElement {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const currentMax = (this._apexChart as any).axes?.w?.globals?.maxX;
       this._headerState = [...this._headerState];
+      
+      // Fix for vertical stacking bug: only re-apply chart config when stacked setting changes
+      // This prevents race conditions during data updates that cause bars to stack vertically
+      if (this._lastAppliedStackedConfig !== this._config?.stacked) {
+        graphData.chart = {
+          stacked: this._config?.stacked,
+        };
+        this._lastAppliedStackedConfig = this._config?.stacked;
+      }
       
       const chartUpdates: Promise<void>[] = [];
       chartUpdates.push(

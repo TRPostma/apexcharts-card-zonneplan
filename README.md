@@ -6,6 +6,10 @@ hour-based tooltips—making it easier to identify cheap and expensive hours at 
 
 > This project is an independent fork and is not affiliated with Zonneplan or the upstream ApexCharts Card project.
 
+**All original apexcharts-card functionality is 100% preserved.** You can use this fork exactly as you would the upstream version—new features are optional and only enabled when explicitly configured.
+
+> **Mobile-friendly advantage:** Unlike Plotly-based Zonneplan charts, ApexCharts' touch interactions and tooltips work reliably on mobile devices—no hover-state limitations.
+
 ![Home Assistant Zonneplan electricity price chart using ApexCharts Card](https://i.imgur.com/qiT6rbG.png)
 
 ## Use cases
@@ -15,21 +19,9 @@ hour-based tooltips—making it easier to identify cheap and expensive hours at 
 - Explore 24–48h energy price forecasts interactively
 - Optimize appliance usage based on dynamic electricity pricing
 
-## Status / Known limitations
-
-This is a personal fork that targets a specific Zonneplan use case. While it is working for day-to-day usage, some parts may still be rough around the edges and you may encounter edge cases.
-
-### Home Assistant editor preview quirk (one big bar)
-Sometimes the Lovelace visual editor preview renders the chart incorrectly (often as a single large bar). This is usually only an editor/preview issue.
-
-Workaround:
-1. Click **Done** to save the card.
-2. Hard refresh Home Assistant (or reload the page).
-3. If it still looks wrong, clear your browser cache for Home Assistant and refresh again.
-
-After a full reload, the chart should render correctly.
-
 ## Installation
+
+**Download:** Get `apexcharts-card.js` from the [Releases page](../../releases/latest) or build from source with `npm run build` (output in `dist/apexcharts-card.js`).
 
 ### Option A — HACS (recommended)
 
@@ -295,6 +287,30 @@ series:
 ```
 
 **Use case:** Highlight key series (e.g., cheapest hour in green, most expensive in red).
+
+
+## Status / Known limitations
+
+This is a personal fork that targets a specific Zonneplan use case. While it is working for day-to-day usage, some parts may still be rough around the edges and you may encounter minor issues.
+
+### ~~Vertical bar stacking issue~~ (FIXED)
+**Status:** Fixed in current version via state-tracked configuration updates.
+
+Previously, bars would render stacked vertically in preview mode and occasionally on page load due to a race condition in chart config synchronization. The fix tracks the `stacked` configuration state and only re-applies it during data updates when it actually changes.
+
+### Mobile tooltip lag (stale values)
+On mobile devices, when rapidly tapping between bars, the tooltip may show a stale value from the previously selected bar instead of updating to the current selection.
+
+**Workarounds:** 
+- Tap deliberately with brief pauses between selections to allow the tooltip to update
+- Tap elsewhere on the dashboard to dismiss the tooltip, then tap the new bar (forces full refresh)
+
+**Technical details:** This appears to be an ApexCharts internal behavior where the tooltip callback isn't invoked on rapid successive touch events—it gets debounced or cached. Attempted fixes:
+- `followCursor: false` – reduces cursor tracking overhead
+- `hideDelay` / `showDelay` adjustments – no improvement
+- Custom tooltip refresh hooks – limited by ApexCharts API
+
+The issue is under investigation. If you find a solution or workaround, please open an issue or PR.
 
 ## Compatibility
 
