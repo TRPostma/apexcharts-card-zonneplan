@@ -1,6 +1,6 @@
 {
   "name": "apexcharts-card",
-  "version": "2.3.1-custom_zonneplan",
+  "version": "2.3.2-custom_zonneplan",
   "description": "Fork of apexcharts-card with Zonneplan-focused UX: per-bar thresholds, tooltip templates, overscroll, header colors, min padding",
   "main": "src/apexcharts-card.ts",
   "scripts": {

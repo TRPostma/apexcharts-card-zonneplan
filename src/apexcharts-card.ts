@@ -188,9 +188,6 @@ class ChartsCard extends LitElement {
 
   private _restoringView = false;
 
-  // Track last applied stacked config to avoid unnecessary re-renders (fixes vertical stacking bug)
-  private _lastAppliedStackedConfig?: boolean;
-
   private _restoreQueued = false;
 
   private _storageKey = '';
@@ -1482,23 +1479,46 @@ class ChartsCard extends LitElement {
       const currentMax = (this._apexChart as any).axes?.w?.globals?.maxX;
       this._headerState = [...this._headerState];
       
-      // Fix for vertical stacking bug: only re-apply chart config when stacked setting changes
-      // This prevents race conditions during data updates that cause bars to stack vertically
-      if (this._lastAppliedStackedConfig !== this._config?.stacked) {
+      // Workaround for ApexCharts render state corruption: force re-render after stacked config
+      const stackedConfigChanged = (this._apexChart as any).w?.config?.chart?.stacked !== this._config?.stacked;
+      
+      if (stackedConfigChanged) {
+        // Destroy and recreate to force clean render state
+        this._apexChart?.destroy();
+        const graph = this.shadowRoot?.querySelector('#graph');
+        if (graph) {
+          // Clear the DOM
+          while (graph.firstChild) {
+            graph.removeChild(graph.firstChild);
+          }
+          // Rebuild with correct stacked setting in graphData
+          graphData.chart = {
+            stacked: this._config?.stacked,
+          };
+          const layout = getLayoutConfig(this._config, this._hass, this._graphs);
+          const mergedLayout = mergeDeep(layout, graphData);
+          this._apexChart = new ApexCharts(graph, mergedLayout);
+          await this._apexChart.render();
+        }
+      }
+      
+      // Update with series data if not already handled by rebuild
+      if (!stackedConfigChanged) {
         graphData.chart = {
           stacked: this._config?.stacked,
         };
-        this._lastAppliedStackedConfig = this._config?.stacked;
       }
       
       const chartUpdates: Promise<void>[] = [];
-      chartUpdates.push(
-        this._apexChart?.updateOptions(
-          graphData,
-          false,
-          TIMESERIES_TYPES.includes(this._config.chart_type) ? false : true,
-        ),
-      );
+      if (!stackedConfigChanged) {
+        chartUpdates.push(
+          this._apexChart?.updateOptions(
+            graphData,
+            false,
+            TIMESERIES_TYPES.includes(this._config.chart_type) ? false : true,
+          ),
+        );
+      }
       if (this._apexBrush) {
         const newMin = start.getTime() - this._serverTimeOffset;
         const newMax = this._findEndOfChart(new Date(end.getTime() - this._serverTimeOffset), false);
